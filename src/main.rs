@@ -1,7 +1,6 @@
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime};
 use serde::Deserialize;
-use validator::{Validate, ValidationErrors};
 use reqwest::Client;
 
 #[derive(Debug, Deserialize)]
@@ -10,19 +9,16 @@ struct TimeRequest {
     country: String,
 }
 
-impl Validate for TimeRequest {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        if self.country.is_empty() {
-            return Err(ValidationErrors::new());
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, Deserialize)]
 struct ZoneResponse {
     timezone: String,
     datetime: String,
+}
+
+impl TimeRequest {
+    fn is_valid(&self) -> bool {
+        !self.country.is_empty()
+    }
 }
 
 async fn index() -> impl Responder {
@@ -30,47 +26,42 @@ async fn index() -> impl Responder {
 }
 
 async fn get_time(info: web::Query<TimeRequest>) -> impl Responder {
-    match info.validate() {
-        Ok(_) => {
-            let country = &info.country;
-            let client = Client::new();
-            match client
-                .get(&format!("https://worldtimeapi.org/api/timezone/{}", country))
-                .send()
-                .await
-            {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        match response.json::<ZoneResponse>().await {
-                            Ok(timezone_response) => {
-                                println!("Response JSON: {:?}", timezone_response);
-                                let datetime = chrono::DateTime::parse_from_rfc3339(&timezone_response.datetime)
-                                    .expect("No se pudo parsear la fecha y hora");
-                                let formatted_datetime = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
+    if !info.is_valid() {
+        return HttpResponse::BadRequest().body("Error: Datos proporcionados no válidos.");
+    }
 
-                                HttpResponse::Ok().body(format!("Hora actual en {}: {}", country, formatted_datetime))
-                            }
-                            Err(_) => {
-                                let error_message = "Error al obtener la información de la zona horaria.";
-                                HttpResponse::InternalServerError().body(error_message)
-                            }
+    let country = &info.country;
+    let client = Client::new();
+    let url = format!("https://worldtimeapi.org/api/timezone/{}", country);
+
+    match client.get(&url).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<ZoneResponse>().await {
+                    Ok(timezone_response) => {
+                        if let Ok(formatted_datetime) = format_datetime(&timezone_response.datetime) {
+                            return HttpResponse::Ok().body(format!("Hora actual en {}: {}", country, formatted_datetime));
+                        } else {
+                            return HttpResponse::InternalServerError().body("Error al obtener la información de la zona horaria.");
                         }
-                    } else {
-                        let error_message = format!("Error: País {} no encontrado.", country);
-                        HttpResponse::BadRequest().body(error_message)
+                    }
+                    Err(_) => {
+                        return HttpResponse::InternalServerError().body("Error al obtener la información de la zona horaria.");
                     }
                 }
-                Err(_) => {
-                    let error_message = "Error al enviar la solicitud al servicio de hora.";
-                    HttpResponse::InternalServerError().body(error_message)
-                }
+            } else {
+                return HttpResponse::BadRequest().body(format!("Error: País {} no encontrado.", country));
             }
         }
         Err(_) => {
-            let error_message = "Error: Datos proporcionados no válidos.";
-            HttpResponse::BadRequest().body(error_message)
+            return HttpResponse::InternalServerError().body("Error al enviar la solicitud al servicio de hora.");
         }
     }
+}
+
+fn format_datetime(datetime: &str) -> Result<String, chrono::ParseError> {
+    let datetime = DateTime::parse_from_rfc3339(datetime)?;
+    Ok(datetime.format("%Y-%m-%d %H:%M:%S").to_string())
 }
 
 #[actix_web::main]
