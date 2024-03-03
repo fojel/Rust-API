@@ -1,6 +1,6 @@
 use actix_web::{web, App, HttpServer, Responder};
 use chrono::{Utc};
-use validator::{Validate, ValidationError};
+use validator::{Validate, ValidationErrors};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -10,16 +10,16 @@ struct TimeRequest {
 }
 
 impl Validate for TimeRequest {
-    fn validate(&self) -> Result<(), ValidationError> {
+    fn validate(&self) -> Result<(), ValidationErrors> {
         if self.timezone.len() < 3 {
-            return Err(ValidationError::new("timezone").with_reason("debe tener al menos 3 caracteres"));
+            return Err(ValidationErrors::new());
         }
         Ok(())
     }
 }
 
 async fn index() -> impl Responder {
-    "¡Hola, mundo!"
+    "GET /time"
 }
 
 async fn get_time(info: web::Query<TimeRequest>) -> impl Responder {
