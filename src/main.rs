@@ -1,5 +1,5 @@
-use actix_web::{web, App, HttpServer, Responder};
-use chrono::{Utc};
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use chrono::Utc;
 use validator::{Validate, ValidationErrors};
 use serde::Deserialize;
 
@@ -19,16 +19,20 @@ impl Validate for TimeRequest {
 }
 
 async fn index() -> impl Responder {
-    "GET /time"
+    HttpResponse::Ok().body("GET /time")
 }
 
 async fn get_time(info: web::Query<TimeRequest>) -> impl Responder {
-    if let Err(e) = info.validate() {
-        return format!("Error de validación: {:?}", e).into();
+    match info.validate() {
+        Ok(_) => {
+            let current_time = Utc::now();
+            HttpResponse::Ok().body(format!("Hora actual en {}: {}", info.timezone, current_time))
+        }
+        Err(e) => {
+            let error_message = "Error de validacion: Los datos proporcionados no son validos.";
+            HttpResponse::BadRequest().body(error_message)
+        }
     }
-
-    let current_time = Utc::now();
-    format!("Hora actual en {}: {}", info.timezone, current_time)
 }
 
 #[actix_web::main]
