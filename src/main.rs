@@ -1,4 +1,5 @@
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use validator::{Validate, ValidationErrors};
 use reqwest::Client;
@@ -43,7 +44,11 @@ async fn get_time(info: web::Query<TimeRequest>) -> impl Responder {
                         match response.json::<ZoneResponse>().await {
                             Ok(timezone_response) => {
                                 println!("Response JSON: {:?}", timezone_response);
-                                HttpResponse::Ok().body(format!("Hora actual en {}: {}", country, timezone_response.datetime))
+                                let datetime = chrono::DateTime::parse_from_rfc3339(&timezone_response.datetime)
+                                    .expect("No se pudo parsear la fecha y hora");
+                                let formatted_datetime = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
+
+                                HttpResponse::Ok().body(format!("Hora actual en {}: {}", country, formatted_datetime))
                             }
                             Err(_) => {
                                 let error_message = "Error al obtener la información de la zona horaria.";
