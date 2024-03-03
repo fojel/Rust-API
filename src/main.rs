@@ -1,21 +1,27 @@
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use chrono::Utc;
-use validator::{Validate, ValidationErrors};
 use serde::Deserialize;
+use validator::{Validate, ValidationErrors};
+use reqwest::Client;
 
 #[derive(Debug, Deserialize)]
 struct TimeRequest {
-    #[serde(rename = "timezone")]
-    timezone: String,
+    #[serde(rename = "country")]
+    country: String,
 }
 
 impl Validate for TimeRequest {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        if self.timezone.len() < 3 {
+        if self.country.is_empty() {
             return Err(ValidationErrors::new());
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct ZoneResponse {
+    timezone: String,
+    datetime: String,
 }
 
 async fn index() -> impl Responder {
@@ -25,11 +31,38 @@ async fn index() -> impl Responder {
 async fn get_time(info: web::Query<TimeRequest>) -> impl Responder {
     match info.validate() {
         Ok(_) => {
-            let current_time = Utc::now();
-            HttpResponse::Ok().body(format!("Hora actual en {}: {}", info.timezone, current_time))
+            let country = &info.country;
+            let client = Client::new();
+            match client
+                .get(&format!("https://worldtimeapi.org/api/timezone/{}", country))
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.json::<ZoneResponse>().await {
+                            Ok(timezone_response) => {
+                                println!("Response JSON: {:?}", timezone_response);
+                                HttpResponse::Ok().body(format!("Hora actual en {}: {}", country, timezone_response.datetime))
+                            }
+                            Err(_) => {
+                                let error_message = "Error al obtener la información de la zona horaria.";
+                                HttpResponse::InternalServerError().body(error_message)
+                            }
+                        }
+                    } else {
+                        let error_message = format!("Error: País {} no encontrado.", country);
+                        HttpResponse::BadRequest().body(error_message)
+                    }
+                }
+                Err(_) => {
+                    let error_message = "Error al enviar la solicitud al servicio de hora.";
+                    HttpResponse::InternalServerError().body(error_message)
+                }
+            }
         }
-        Err(e) => {
-            let error_message = "Error de validacion: Los datos proporcionados no son validos.";
+        Err(_) => {
+            let error_message = "Error: Datos proporcionados no válidos.";
             HttpResponse::BadRequest().body(error_message)
         }
     }
